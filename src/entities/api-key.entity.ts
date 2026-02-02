@@ -61,6 +61,6 @@ export class ApiKey {
   deleted_at!: Date | null;
 
   // Identifier of who deleted this API key
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   deleted_by!: string | null;
 }

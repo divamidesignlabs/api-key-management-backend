@@ -47,6 +47,6 @@ export class SaInfo {
   deleted_at!: Date | null;
 
   // Identifier of who deleted this service account
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   deleted_by!: string | null;
 }

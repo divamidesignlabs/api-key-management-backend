@@ -336,14 +336,14 @@ export class KeyManagerService {
         );
       }
 
-      const { expires_at, is_active } = updateKeyDto;
+      const { name, description, expires_at, is_active } = updateKeyDto;
 
       // Validate at least one field is provided
-      if (expires_at === undefined && is_active === undefined) {
+      if (name === undefined && description === undefined && expires_at === undefined && is_active === undefined) {
         throw new HttpException(
           {
             error: 'Bad Request',
-            message: 'At least one field (expires_at or is_active) must be provided',
+            message: 'At least one field (name, description, expires_at, or is_active) must be provided',
             code: 'MISSING_UPDATE_FIELDS',
             timestamp: new Date().toISOString(),
           },
@@ -375,6 +375,16 @@ export class KeyManagerService {
 
       // Prepare update data
       const updateData: any = {};
+
+      // Set name if provided
+      if (name !== undefined) {
+        updateData.name = name;
+      }
+
+      // Set description if provided
+      if (description !== undefined) {
+        updateData.description = description;
+      }
 
       // Validate and set expiry date if provided
       if (expires_at !== undefined) {
@@ -608,24 +618,25 @@ export class KeyManagerService {
       const limit = Math.min(100, Math.max(1, parseInt(String(query.limit || 10))));
       const skip = (page - 1) * limit;
 
-      // Parse sort parameters
-      const sortBy = query.sort_by || 'created_at';
-      const sortOrder = query.sort_order || 'DESC';
+      // Parse sort parameters using database column names
+      const sortByColumn = query.sort_by || 'created_at';
+      const sortOrderDirection = query.sort_order || 'DESC';
 
       // Build query with filters
-      const queryBuilder = this.apiKeyRepo.createQueryBuilder('api_key');
+      const queryBuilder = this.apiKeyRepo.createQueryBuilder('api_key')
+        .leftJoinAndSelect('api_key.service_account', 'sa_info');
 
-      // Exclude soft-deleted records by default
+      // Exclude soft-deleted records by default using column name
       if (!query.include_deleted) {
         queryBuilder.andWhere('api_key.deleted_at IS NULL');
       }
 
-      // Apply client_id filter
+      // Apply client_id filter using column name
       if (query.client_id) {
         queryBuilder.andWhere('api_key.client_id = :clientId', { clientId: query.client_id });
       }
 
-      // Apply status filter
+      // Apply status filter using column names
       if (query.status) {
         if (query.status === 'active') {
           queryBuilder.andWhere('api_key.is_active = :isActive', { isActive: true });
@@ -637,7 +648,7 @@ export class KeyManagerService {
         }
       }
 
-      // Apply search filter (name or description)
+      // Apply search filter using column names (name, description)
       if (query.search) {
         queryBuilder.andWhere(
           '(api_key.name ILIKE :search OR api_key.description ILIKE :search)',
@@ -648,10 +659,10 @@ export class KeyManagerService {
       // Get total count before pagination
       const total = await queryBuilder.getCount();
 
-      // Apply sorting
-      const allowedSortFields = ['created_at', 'updated_at', 'expiry_date', 'name', 'is_active'];
-      const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'created_at';
-      queryBuilder.orderBy(`api_key.${validSortBy}`, sortOrder);
+      // Apply sorting - validate against actual database column names
+      const allowedSortColumns = ['created_at', 'updated_at', 'expiry_date', 'name', 'is_active'];
+      const validSortColumn = allowedSortColumns.includes(sortByColumn) ? sortByColumn : 'created_at';
+      queryBuilder.orderBy(`api_key.${validSortColumn}`, sortOrderDirection);
 
       // Apply pagination
       queryBuilder.skip(skip).take(limit);
@@ -678,19 +689,21 @@ export class KeyManagerService {
           keys: keys.map((key) => ({
             id: key.id,
             client_id: key.client_id,
+            client_secret: key.service_account?.client_secret,
+            api_key: key.api_key,
             name: key.name,
             description: key.description,
             created_at: key.created_at,
             expires_at: key.expiry_date,
             status: key.deleted_at 
               ? 'deleted' 
-              : key.is_active 
-                ? 'active' 
-                : 'inactive',
-            ...(key.deleted_at && {
-              deleted_at: key.deleted_at,
-              deleted_by: key.deleted_by,
-            }),
+              : !key.is_active 
+                ? 'inactive'
+                : key.expiry_date <= new Date()
+                  ? 'expired'
+                  : 'active',
+            deleted_at: key.deleted_at,
+            deleted_by: key.deleted_by,
           })),
           pagination: {
             page,

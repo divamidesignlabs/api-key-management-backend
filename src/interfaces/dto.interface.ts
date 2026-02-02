@@ -18,6 +18,8 @@ export interface ValidateApiKeyDto {
 
 // DTO for updating an API key
 export interface UpdateApiKeyDto {
+  name?: string; // Optional new name
+  description?: string; // Optional new description
   expires_at?: string; // Optional new expiration date in ISO 8601 format
   is_active?: boolean; // Optional active status
 }
